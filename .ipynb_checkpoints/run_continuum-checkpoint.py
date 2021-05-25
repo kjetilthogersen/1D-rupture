@@ -5,7 +5,7 @@
 
 
 import numpy as np
-def run_continuum(x, tau, tau_minus, dt, gamma, output_interval = 1, tmax = 1, beta = 0.01):
+def run_continuum(x, tau, tau_minus, dt, gamma, output_interval = 1, tmax = 1, beta = 0.01, bc = 'fixed', frictionLaw = None):
 
 	N = len(x)
 	u = np.zeros(np.size(x))
@@ -13,7 +13,7 @@ def run_continuum(x, tau, tau_minus, dt, gamma, output_interval = 1, tmax = 1, b
 	a = np.zeros(np.size(x))
 	stuck = np.ones(np.size(x))*True
 
-	Nsave = np.min([int(np.ceil(np.max(x)*3/(dt*output_interval))), int(tmax/dt/output_interval+1) ]) #Initalize arrays with size based on the system size and a rupture speed of 1/3 v_s or the maximum time if given.
+	Nsave = np.min([int(np.ceil(np.max(x)*10/(dt*output_interval))), int(tmax/dt/output_interval+1) ]) #Initalize arrays with size based on the system size and a rupture speed of 1/10 v_s or the maximum time if given.
 
 	u_out = np.zeros((N,Nsave))
 	v_out = np.zeros((N,Nsave))
@@ -33,13 +33,23 @@ def run_continuum(x, tau, tau_minus, dt, gamma, output_interval = 1, tmax = 1, b
 		taubar = np.copy(tau)
 		taubar[v<0]=tau_minus[v<0] # In case of negative velocities
 
-		utmp = np.insert(u,(0,len(u)),(0,0))
+		if bc=='fixed':
+			utmp = np.insert(u,(0,len(u)),(0,0))
+			vtmp = np.insert(v,(0,len(v)),(0,0))
+		elif bc=='force_left':
+			utmp = np.insert(u,(0,len(u)),(u[0],0))
+			vtmp = np.insert(v,(0,len(v)),(v[0],v[-1]))
+		
 		xtmp = np.insert(x,(0,len(x)),(2*x[0]-x[1], 2*x[-1]-x[-2] ))
-		vtmp = np.insert(v,(0,len(v)),(v[0],v[-1]))
 		dx = np.diff(xtmp)
 		
 		# accelaration
 		a = -gamma*u + taubar + ((utmp[2:]-utmp[1:-1])/dx[0:-1] - (utmp[1:-1]-utmp[0:-2])/dx[1:])/((dx[0:-1]+dx[1:])/2) + beta*((vtmp[2:]-vtmp[1:-1])/dx[0:-1] - (vtmp[1:-1]-vtmp[0:-2])/dx[1:])/((dx[0:-1]+dx[1:])/2)
+        
+        # add friction law (supplied as a frictionLaw object)
+		if frictionLaw is not None:
+			frictionMod = frictionLaw.getFriction(x,u,v,tau,stuck)
+			a[stuck==False] = a[stuck==False] - frictionMod[stuck==False]
 
 		#Store first time of ruputure (for more precise rupture speed than output allows for)
 		unstickTime[ ((a>=1)|(a<-1)) & (stuck==True) & (unstickTime is not float('nan')) ] = t
@@ -71,13 +81,16 @@ def run_continuum(x, tau, tau_minus, dt, gamma, output_interval = 1, tmax = 1, b
 
 
 	#Place output in dictionary:
-	out = {'u': u_out[:,0:output_ind],
+	out = {'x': x,
+		'tau': tau,
+		'u': u_out[:,0:output_ind],
 		'v': v_out[:,0:output_ind],
 		'a': a_out[:,0:output_ind],
 		'stuck': stuck_out[:,0:output_ind],
 		't': t_out[0:output_ind],
 		'unstickTime': unstickTime,
-        'x': x
+		'beta': beta,
+		'gamma': gamma
 	}
 
 	return out
