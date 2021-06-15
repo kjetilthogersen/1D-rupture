@@ -39,13 +39,13 @@ def run_continuum(x, tau, tau_minus, dt, gamma, output_interval = 1, tmax = 1, b
 		elif bc=='force_left':
 			utmp = np.insert(u,(0,len(u)),(u[0],0))
 			vtmp = np.insert(v,(0,len(v)),(v[0],v[-1]))
-		
+
 		xtmp = np.insert(x,(0,len(x)),(2*x[0]-x[1], 2*x[-1]-x[-2] ))
 		dx = np.diff(xtmp)
-		
+
 		# accelaration
 		a = -gamma*u + taubar + ((utmp[2:]-utmp[1:-1])/dx[0:-1] - (utmp[1:-1]-utmp[0:-2])/dx[1:])/((dx[0:-1]+dx[1:])/2) + beta*((vtmp[2:]-vtmp[1:-1])/dx[0:-1] - (vtmp[1:-1]-vtmp[0:-2])/dx[1:])/((dx[0:-1]+dx[1:])/2)
-        
+
         # add friction law (supplied as a frictionLaw object)
 		if frictionLaw is not None:
 			frictionMod = frictionLaw.getFriction(x,u,v,tau,stuck)
@@ -58,24 +58,31 @@ def run_continuum(x, tau, tau_minus, dt, gamma, output_interval = 1, tmax = 1, b
 		stuck[a>=1]=False
 		stuck[a<=-1]=False
 
-		#Euler Cromer step		
+		#Euler Cromer step
 		v[stuck==False] = v[stuck==False] + a[stuck==False]*dt
 		stuck[((v<0)&(v_prev>0)) & (stuck_prev==False)]=True #Stick if velocity changes sign
 		v[stuck==True]=0
 		u[stuck==False] = u[stuck==False] + v[stuck==False]*dt
+		if frictionLaw is not None:
+			frictionLaw.step(x,u,v,tau,stuck,dt)
 
-		if np.sum(stuck)==N: # Stop simulation if all blocks are stuck.
+		if np.sum(stuck)==N: # Stop simulation if all blocks are stuck (and store final step).
+			u_out[:,output_ind+1] = u
+			v_out[:,output_ind+1] = v
+			a_out[:,output_ind+1] = a
+			stuck_out[:,output_ind+1] = stuck
+			t_out[output_ind+1] = t
 			break
 
 		i+=1
 		t = dt*i
-		
+
 		if i%output_interval==0: # Prepare output
 			u_out[:,output_ind] = u
 			v_out[:,output_ind] = v
 			a_out[:,output_ind] = a
 			stuck_out[:,output_ind] = stuck
-			
+
 			t_out[output_ind] = t
 			output_ind+=1
 
@@ -90,7 +97,8 @@ def run_continuum(x, tau, tau_minus, dt, gamma, output_interval = 1, tmax = 1, b
 		't': t_out[0:output_ind],
 		'unstickTime': unstickTime,
 		'beta': beta,
-		'gamma': gamma
+		'gamma': gamma,
+		'frictionLaw': frictionLaw
 	}
 
 	return out
